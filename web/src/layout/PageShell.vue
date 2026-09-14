@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { storeToRefs } from 'pinia';
 import SettingsModal from '../components/SettingsModal.vue';
+import { useLogoStore } from '../store/useLogoStore';
 
 const settingsOpen = ref(false);
+
+const logoStore = useLogoStore();
+const { logoSrc } = storeToRefs(logoStore);
 </script>
 
 <template>
@@ -10,7 +15,7 @@ const settingsOpen = ref(false);
     <aside class="sidebar">
       <div class="sidebar-header">
         <router-link to="/" class="logo">
-          <img src="/assets/logo.png" alt="Session Recorder logo" />
+          <img :src="logoSrc" alt="Session Recorder logo" />
           <span class="logo-text">Session Recorder</span>
         </router-link>
       </div>

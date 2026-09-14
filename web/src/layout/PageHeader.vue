@@ -1,9 +1,15 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { storeToRefs } from 'pinia';
+import { useLogoStore } from '../store/useLogoStore';
+
+const logoStore = useLogoStore();
+const { logoSrc } = storeToRefs(logoStore);
+</script>
 
 <template>
   <div class="header">
     <router-link to="/" class="logo">
-      <img src="/assets/logo.png" alt="Session Recorder logo" />
+      <img :src="logoSrc" alt="Session Recorder logo" />
       <span class="heading">Session Recorder</span>
     </router-link>
   </div>
