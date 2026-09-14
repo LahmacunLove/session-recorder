@@ -42,6 +42,7 @@ directory instead of MinIO — see the `--storage-fs-root` flag in
 ## I want to... deploy with Docker
 
 ```bash
+cp .env.example .env   # set SERVER_HOST to this machine's hostname/IP
 ./docker-build.sh up --build
 ```
 
@@ -58,6 +59,25 @@ directory instead of MinIO — see the `--storage-fs-root` flag in
 | Web Interface | http://localhost:3000 |
 | MinIO Console | http://localhost:9090 (admin/password123) |
 | SessionSource gRPC-Web | http://localhost:8081 |
+
+**`SERVER_HOST`** (in `.env`) is the hostname or IP other machines use to
+reach this host — it's baked into the S3 URLs the backend hands out to
+clients. Defaults to `localhost` if unset.
+
+**MinIO on CPUs without x86-64-v2 support** (some older NAS boxes): the
+official MinIO image requires it and crashes with `Fatal glibc error: CPU
+does not support x86-64-v2`. `docker-build.sh` detects this automatically
+and builds MinIO from source instead (see `minio/Dockerfile`). If you're
+starting the stack some other way — e.g. a NAS UI like Portainer or Synology
+Container Manager, which just runs `docker compose up` directly — run this
+once first:
+
+```bash
+bash select-minio-image.sh
+```
+
+It writes (or removes) `docker-compose.override.yml`, which `docker compose`
+then picks up automatically on every future start, no flags needed.
 
 ---
 

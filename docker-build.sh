@@ -85,6 +85,9 @@ if ! docker compose version &> /dev/null; then
     exit 1
 fi
 
+# Pick the right MinIO image for this host's CPU (see select-minio-image.sh).
+bash "$(dirname "${BASH_SOURCE[0]}")/select-minio-image.sh"
+
 echo "🐳 Session Recorder Docker Management"
 echo "====================================="
 
@@ -112,17 +115,17 @@ case $ACTION in
         docker compose down
         print_success "Services stopped successfully!"
         ;;
-        
+
     "logs")
         print_status "Showing logs from all services..."
         docker compose logs -f
         ;;
-        
+
     "ps")
         print_status "Running containers:"
         docker compose ps
         ;;
-        
+
     "clean")
         print_warning "This will remove ALL containers, networks, and volumes!"
         read -p "Are you sure? (y/N): " -n 1 -r
@@ -130,10 +133,10 @@ case $ACTION in
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             print_status "Stopping services..."
             docker compose down
-            
+
             print_status "Removing containers, networks, and volumes..."
             docker compose down --volumes --remove-orphans
-            
+
             print_status "Removing images..."
             docker compose down --rmi all --volumes --remove-orphans
             
