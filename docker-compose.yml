@@ -11,6 +11,10 @@ services:
       - session-recorder-net
 
   # MinIO S3-compatible storage
+  # Uses the official image by default. On CPUs that don't support
+  # x86-64-v2 (the official image crashes there, see minio/Dockerfile),
+  # docker-build.sh switches to docker-compose.minio-source.yml, which
+  # overrides this to build MinIO from source instead.
   minio:
     image: quay.io/minio/minio:latest
     command: server /data --console-address ":9090"
@@ -29,6 +33,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
   # Go Backend Services (also serves gRPC-Web on 8081)
   go-backend:
@@ -42,8 +47,8 @@ services:
       - "8081:8081" # SessionSource gRPC-Web
     environment:
       - S3_ENDPOINT=minio:9000
-      - S3_LOCAL_ENDPOINT=localhost:3000/minio
-      - S3_PUBLIC_ENDPOINT=localhost:3000/minio
+      - S3_LOCAL_ENDPOINT=${SERVER_HOST:-localhost}:3000/minio
+      - S3_PUBLIC_ENDPOINT=${SERVER_HOST:-localhost}:3000/minio
       - S3_ACCESS_KEY=admin
       - S3_SECRET_KEY=password123
       - S3_USE_SSL=false
@@ -65,7 +70,7 @@ services:
       context: .
       dockerfile: ./web/Dockerfile
       args:
-        - VITE_GRPC_SERVER_URL=http://localhost:3000/grpc
+        - VITE_GRPC_SERVER_URL=/grpc
     ports:
       - "3000:80" # Web interface
     depends_on:

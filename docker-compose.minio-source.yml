@@ -1,0 +1,21 @@
+# Optional override: builds MinIO from source instead of using the
+# official quay.io/minio/minio image.
+#
+# Use this on hosts whose CPU doesn't support x86-64-v2 (the official
+# image requires it and crashes with "Fatal glibc error: CPU does not
+# support x86-64-v2"). See minio/Dockerfile for details.
+#
+# docker-build.sh adds this automatically when it detects an
+# unsupported CPU. To use it manually with docker-compose.dev.yml:
+#   docker compose -f docker-compose.dev.yml -f docker-compose.minio-source.yml up
+services:
+  minio:
+    image: session-recorder-minio:local
+    build:
+      context: ./minio
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

@@ -2,6 +2,9 @@ version: "3.3"
 
 services:
   # MinIO S3-compatible storage
+  # Uses the official image by default. On CPUs that don't support
+  # x86-64-v2, add docker-compose.minio-source.yml as an extra -f file
+  # to build MinIO from source instead (see minio/Dockerfile).
   minio:
     image: quay.io/minio/minio:latest
     command: server /data --console-address ":9090"
