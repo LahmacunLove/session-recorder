@@ -79,10 +79,11 @@ Thumbs.db
 *~
 
 # MinIO data (local development)
-minio/
+/data/minio/
 
 # Docker
 .env.docker.local
+docker-compose.override.yml
 docker-compose.override.yml.local
 *.log
 

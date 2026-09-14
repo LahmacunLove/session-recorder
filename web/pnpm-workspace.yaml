@@ -1,2 +1,8 @@
 packages:
   - 'libs/*'
+allowBuilds:
+  '@swc/core': true
+  esbuild: true
+  nx: true
+  unrs-resolver: true
+  vue-demi: true
