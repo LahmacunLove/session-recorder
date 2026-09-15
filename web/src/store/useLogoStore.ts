@@ -12,13 +12,15 @@ export const useLogoStore = defineStore('logo', () => {
   const isCustom = computed(() => customLogo.value !== null);
 
   const applyFavicon = () => {
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
-    }
+    // Mutating an existing <link>'s href doesn't reliably repaint the tab
+    // icon in Firefox/Chrome — they only pick up a fresh element.
+    document
+      .querySelectorAll<HTMLLinkElement>('link[rel="icon"]')
+      .forEach((el) => el.remove());
+    const link = document.createElement('link');
+    link.rel = 'icon';
     link.href = logoSrc.value;
+    document.head.appendChild(link);
   };
 
   const setLogoFromFile = (file: File): Promise<void> => {
