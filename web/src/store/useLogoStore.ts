@@ -11,7 +11,39 @@ export const useLogoStore = defineStore('logo', () => {
   const logoSrc = computed(() => customLogo.value || DEFAULT_LOGO);
   const isCustom = computed(() => customLogo.value !== null);
 
-  const applyFavicon = () => {
+  // The in-page <img> is rounded with CSS, but a browser tab favicon is
+  // painted by the browser chrome straight from the image bytes — CSS can't
+  // touch it. To get a round tab icon we crop the source into a circle
+  // (transparent corners) on a canvas before using it as the favicon.
+  const FAVICON_SIZE = 64;
+  const toRoundFavicon = (src: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = FAVICON_SIZE;
+        canvas.height = FAVICON_SIZE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('2D canvas context unavailable'));
+          return;
+        }
+        ctx.beginPath();
+        ctx.arc(FAVICON_SIZE / 2, FAVICON_SIZE / 2, FAVICON_SIZE / 2, 0, Math.PI * 2);
+        ctx.clip();
+        const scale = Math.max(FAVICON_SIZE / img.width, FAVICON_SIZE / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (FAVICON_SIZE - w) / 2, (FAVICON_SIZE - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => reject(new Error('Failed to load image for favicon'));
+      img.src = src;
+    });
+
+  const applyFavicon = async () => {
+    const href = await toRoundFavicon(logoSrc.value).catch(() => logoSrc.value);
+
     // Mutating an existing <link>'s href doesn't reliably repaint the tab
     // icon in Firefox/Chrome — they only pick up a fresh element.
     document
@@ -19,7 +51,7 @@ export const useLogoStore = defineStore('logo', () => {
       .forEach((el) => el.remove());
     const link = document.createElement('link');
     link.rel = 'icon';
-    link.href = logoSrc.value;
+    link.href = href;
     document.head.appendChild(link);
   };
 
