@@ -11,6 +11,16 @@ export const useLogoStore = defineStore('logo', () => {
   const logoSrc = computed(() => customLogo.value || DEFAULT_LOGO);
   const isCustom = computed(() => customLogo.value !== null);
 
+  const applyFavicon = () => {
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = logoSrc.value;
+  };
+
   const setLogoFromFile = (file: File): Promise<void> => {
     if (!file.type.startsWith('image/')) {
       return Promise.reject(new Error('File must be an image'));
@@ -25,6 +35,7 @@ export const useLogoStore = defineStore('logo', () => {
         const dataUrl = reader.result as string;
         customLogo.value = dataUrl;
         localStorage.setItem(STORAGE_KEY, dataUrl);
+        applyFavicon();
         resolve();
       };
       reader.onerror = () => reject(reader.error);
@@ -35,7 +46,11 @@ export const useLogoStore = defineStore('logo', () => {
   const resetLogo = () => {
     customLogo.value = null;
     localStorage.removeItem(STORAGE_KEY);
+    applyFavicon();
   };
+
+  // Apply whatever logo is already stored (or the default) on store creation.
+  applyFavicon();
 
   return { logoSrc, isCustom, setLogoFromFile, resetLogo };
 });
