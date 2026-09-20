@@ -15,12 +15,13 @@ const (
 	ShareMethodDirect  ShareMethod = "direct"
 	ShareMethodS3Copy  ShareMethod = "s3_copy"
 	ShareMethodDropbox ShareMethod = "dropbox"
+	ShareMethodWebDAV  ShareMethod = "webdav"
 )
 
 // NewFileSharer creates a FileSharer based on environment configuration.
 //
 // Environment variables:
-//   - FILE_SHARE_METHOD: "direct" (default), "s3_copy", or "dropbox"
+//   - FILE_SHARE_METHOD: "direct" (default), "s3_copy", "dropbox", or "webdav"
 //
 // For s3_copy method:
 //   - FILE_SHARE_S3_ENDPOINT: S3 endpoint
@@ -33,6 +34,14 @@ const (
 // For dropbox method:
 //   - FILE_SHARE_DROPBOX_ACCESS_TOKEN: Dropbox API access token
 //   - FILE_SHARE_DROPBOX_FOLDER: Folder path in Dropbox (default: "/SessionRecorder")
+//
+// For webdav method (Nextcloud/ownCloud):
+//   - FILE_SHARE_WEBDAV_URL: WebDAV base URL for the target user, e.g.
+//     "https://cloud.example.com/remote.php/dav/files/shareuser"
+//   - FILE_SHARE_WEBDAV_USERNAME / FILE_SHARE_WEBDAV_PASSWORD: credentials
+//     (use a Nextcloud app password, not the account password)
+//   - FILE_SHARE_WEBDAV_FOLDER: folder path under the WebDAV root
+//     (default: "/SessionRecorder")
 func NewFileSharer(s FileStorage) (FileSharer, error) {
 	method := ShareMethod(strings.ToLower(getEnv("FILE_SHARE_METHOD", "direct")))
 
@@ -48,6 +57,10 @@ func NewFileSharer(s FileStorage) (FileSharer, error) {
 	case ShareMethodDropbox:
 		log.Info().Msg("Using Dropbox for file sharing")
 		return newDropboxSharer(s), nil
+
+	case ShareMethodWebDAV:
+		log.Info().Msg("Using WebDAV (Nextcloud/ownCloud) for file sharing")
+		return newWebDAVSharer(s)
 
 	default:
 		return nil, fmt.Errorf("unknown file share method: %s", method)
@@ -89,6 +102,32 @@ func newDropboxSharer(s FileStorage) *DropboxSharer {
 	}
 
 	return NewDropboxSharer(s, config)
+}
+
+func newWebDAVSharer(s FileStorage) (*WebDAVSharer, error) {
+	webdavURL := os.Getenv("FILE_SHARE_WEBDAV_URL")
+	if webdavURL == "" {
+		return nil, fmt.Errorf("FILE_SHARE_WEBDAV_URL is required for webdav method")
+	}
+
+	username := os.Getenv("FILE_SHARE_WEBDAV_USERNAME")
+	if username == "" {
+		return nil, fmt.Errorf("FILE_SHARE_WEBDAV_USERNAME is required for webdav method")
+	}
+
+	password := os.Getenv("FILE_SHARE_WEBDAV_PASSWORD")
+	if password == "" {
+		return nil, fmt.Errorf("FILE_SHARE_WEBDAV_PASSWORD is required for webdav method")
+	}
+
+	config := WebDAVConfig{
+		URL:      webdavURL,
+		Username: username,
+		Password: password,
+		Folder:   getEnv("FILE_SHARE_WEBDAV_FOLDER", "/SessionRecorder"),
+	}
+
+	return NewWebDAVSharer(s, config)
 }
 
 func getEnv(key, defaultValue string) string {
