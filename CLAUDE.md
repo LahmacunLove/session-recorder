@@ -117,6 +117,14 @@ S3_SECRET_KEY=password123
 S3_USE_SSL=false
 ```
 
+File sharing (`FILE_SHARE_METHOD=direct|s3_copy|dropbox|webdav`, default `direct`)
+and its per-method env vars are documented in the doc comment above
+`NewFileSharer` in `go/fileshare/factory.go`. The `webdav` method targets
+Nextcloud/ownCloud (`FILE_SHARE_WEBDAV_URL`, `FILE_SHARE_WEBDAV_USERNAME`,
+`FILE_SHARE_WEBDAV_PASSWORD`, `FILE_SHARE_WEBDAV_FOLDER`) and requires an
+SMTP config (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
+`SMTP_FROM`, `SMTP_FROM_NAME`) to actually email the resulting link.
+
 ### Web (Vite)
 ```bash
 VITE_GRPC_SERVER_URL=http://localhost:8081
