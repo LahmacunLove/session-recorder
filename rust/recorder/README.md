@@ -106,4 +106,32 @@ RUST_LOG=recorder=debug,mdns_sd=warn ./target/release/recorder ...
 
 - Linux with ALSA.
 - avahi-daemon running (for mDNS discovery).
-- Membership in the `audio` group (or equivalent) to open the capture device.
+- Membership in the `audio` group (or equivalent) to open the capture device —
+  only relevant if `--device` names a raw ALSA device (`hw:N`/`plughw:N`)
+  directly; not needed when going through PipeWire (see below).
+
+## Audio backend: PipeWire
+
+The recorder's code is unchanged and still talks to a plain ALSA PCM (`src/audio/alsa.rs`)
+— there is no PipeWire-specific code. Instead, with `pipewire`, `wireplumber` and
+`pipewire-alsa` installed, ALSA's `default` PCM/ctl is transparently redirected
+to PipeWire (`/usr/share/alsa/alsa.conf.d/99-pipewire-default.conf`, shipped by
+`pipewire-alsa`). That's why the packaged deployment uses `--device default`
+rather than a raw `hw:N`/`plughw:N` device: PipeWire multiplexes the hardware
+so other local clients on the same machine can use it concurrently, instead of
+one process holding it exclusively.
+
+Two things this implies:
+
+- **PipeWire's socket access control is UID-scoped.** The recorder must run as
+  the same login user whose session hosts PipeWire/WirePlumber (see the
+  `systemd --user` unit in `packaging/`), and any other local process that
+  needs to share the interface must run as that same user too — a different
+  account is rejected even with matching Unix group membership.
+- `--device hw:N`/`plughw:N` bypasses PipeWire and always grabs the interface
+  exclusively, PipeWire installed or not — use `--device default` (or another
+  PipeWire-backed PCM name) whenever sharing matters.
+
+Verify sharing works with e.g. `arecord -D default -f S16_LE -r 48000 -c 2 -d 3 probe.wav`
+run concurrently while the recorder is running — it must succeed instead of
+failing with "Device or resource busy".

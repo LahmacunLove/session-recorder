@@ -1,11 +1,13 @@
 #!/bin/sh
 set -e
 
+TARGET_USER="${SESSION_RECORDER_USER:-pi}"
+
 case "$1" in
   remove|deconfigure)
-    if [ -d /run/systemd/system ]; then
-      systemctl stop session-recorder-alsa-reader.service || true
-      systemctl disable session-recorder-alsa-reader.service || true
+    if id "$TARGET_USER" >/dev/null 2>&1; then
+      runuser -l "$TARGET_USER" -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user stop session-recorder-alsa-reader.service' || true
+      runuser -l "$TARGET_USER" -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user disable session-recorder-alsa-reader.service' || true
     fi
     ;;
 esac

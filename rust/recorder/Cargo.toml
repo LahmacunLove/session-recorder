@@ -47,15 +47,19 @@ name = "session-recorder-alsa-reader"
 section = "sound"
 priority = "optional"
 # libasound2 was renamed libasound2t64 in the time64 transition (trixie+);
-# accept either. adduser is needed by the postinst.
-depends = "libasound2 | libasound2t64, adduser"
-# The default discovery backend talks to the system avahi-daemon over D-Bus.
-# Recommended (not required) since --discovery mdns works without them.
-recommends = "avahi-daemon, dbus"
+# accept either.
+depends = "libasound2 | libasound2t64"
+# pipewire-alsa lets the shipped default --device default multiplex the
+# hardware for multiple local clients instead of grabbing it exclusively (see
+# session-recorder-alsa-reader.default); avahi-daemon/dbus are for the
+# default mDNS discovery backend. All soft recommends, not hard deps: the
+# recorder still works against a raw ALSA hw:N device, and --discovery mdns
+# works without avahi/dbus.
+recommends = "pipewire, wireplumber, pipewire-alsa, avahi-daemon, dbus"
 maintainer-scripts = "packaging"
 conf-files = ["/etc/default/session-recorder-alsa-reader"]
 assets = [
     ["target/release/recorder", "usr/bin/session-recorder-alsa-reader", "755"],
-    ["packaging/session-recorder-alsa-reader.service", "lib/systemd/system/session-recorder-alsa-reader.service", "644"],
+    ["packaging/session-recorder-alsa-reader.service", "usr/lib/systemd/user/session-recorder-alsa-reader.service", "644"],
     ["packaging/session-recorder-alsa-reader.default", "etc/default/session-recorder-alsa-reader", "644"],
 ]
