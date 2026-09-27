@@ -9,7 +9,7 @@
  * Scenario: Recording state
  *   Given the recorder has SIGNAL status
  *   When the card renders
- *   Then the recording indicator and RMS meter should be visible
+ *   Then the recording indicator and peak meter should be visible
  *
  * Scenario: Selected state
  *   Given the card has isSelected=true

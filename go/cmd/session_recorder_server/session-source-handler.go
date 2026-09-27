@@ -329,7 +329,7 @@ func (h *SessionSourceHandler) streamRecorders(ctx context.Context, request *ssp
 
 		var recorderMsg *sspb.Recorder
 		if cachedStatus != nil {
-			// Use cached status (has real signal/RMS data)
+			// Use cached status (has real signal/peak data)
 			recorderMsg = cachedStatus
 		} else {
 			// No cached status, send with UNKNOWN
