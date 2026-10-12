@@ -1,25 +1,25 @@
 #!/bin/sh
 set -e
 
-USER=session-recorder-alsa-reader
-GROUP=session-recorder-alsa-reader
+# The recorder ships as a systemd --user unit (see packaging/*.service):
+# it must run as the same login user whose session hosts PipeWire/WirePlumber,
+# since PipeWire's socket access control is UID-scoped. Set SESSION_RECORDER_USER
+# to override the target user (default: pi, the Raspberry Pi OS convention).
+TARGET_USER="${SESSION_RECORDER_USER:-pi}"
 
 case "$1" in
   configure)
-    if ! getent group "$GROUP" >/dev/null 2>&1; then
-      addgroup --system "$GROUP"
-    fi
-    if ! getent passwd "$USER" >/dev/null 2>&1; then
-      adduser --system --no-create-home --ingroup "$GROUP" \
-        --shell /usr/sbin/nologin "$USER"
-    fi
-    # Soundcard / input access is granted at runtime via the unit's
-    # SupplementaryGroups=audio input, so no group edits are needed here.
-    if [ -d /run/systemd/system ]; then
-      systemctl daemon-reload || true
+    if id "$TARGET_USER" >/dev/null 2>&1; then
+      # Headless persistence: starts TARGET_USER's systemd --user instance
+      # (and with it pipewire/wireplumber) at boot without an interactive login.
+      loginctl enable-linger "$TARGET_USER" || true
+      runuser -l "$TARGET_USER" -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user daemon-reload' || true
+    else
+      echo "WARNING: user '$TARGET_USER' does not exist." >&2
+      echo "Set SESSION_RECORDER_USER=<user> and re-run, or enable the unit manually as the right user." >&2
     fi
     echo "session-recorder-alsa-reader installed. Edit /etc/default/session-recorder-alsa-reader,"
-    echo "then: systemctl enable --now session-recorder-alsa-reader"
+    echo "then, as $TARGET_USER: systemctl --user enable --now session-recorder-alsa-reader"
     ;;
 esac
 

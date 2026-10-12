@@ -6,9 +6,18 @@
 # NOTE: keep RECORDER_ARGS on a single line (systemd EnvironmentFile parsing).
 
 # Minimum required: a stable UUID and a name.
+# --device default: with the `pipewire-alsa` package installed, ALSA's
+# `default` PCM/ctl is redirected to PipeWire (see
+# /usr/share/alsa/alsa.conf.d/99-pipewire-default.conf), which multiplexes the
+# hardware for multiple local clients instead of granting one exclusive
+# access. Keep --device default (or another PipeWire-backed PCM name) rather
+# than a raw hw:N device if other local processes need to use the interface
+# too — hw:N always grabs it exclusively, PipeWire or not.
 RECORDER_ARGS="--recorder-id 00000000-0000-0000-0000-000000000000 --recorder-name alsa-reader --device default"
 
-# Fuller example (detector tuning, sysfs LEDs, cut button, send buffer):
+# Fuller example (detector tuning, sysfs LEDs, cut button, send buffer). Note:
+# --device hw:0 bypasses PipeWire and grabs the interface exclusively again —
+# use --device default (or plughw:CARD=...) unless you specifically want that.
 #RECORDER_ARGS="--recorder-id <uuid> --recorder-name 'Studio 1' --device hw:0 --detector-threshold-db -45 --attack-time 5 --release-time 30 --led-rec-state led0 --led-upload led1 --input-event 3 --input-keycode 28 --input-hold-ms 800 --send-buffer-secs 120"
 
 # Richer status display via the WS2812 pixel-LED controller (I2C)

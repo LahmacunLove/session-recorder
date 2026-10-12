@@ -1,16 +1,18 @@
 #!/bin/sh
 set -e
 
+TARGET_USER="${SESSION_RECORDER_USER:-pi}"
+
 case "$1" in
   remove|purge)
-    if [ -d /run/systemd/system ]; then
-      systemctl daemon-reload || true
+    if id "$TARGET_USER" >/dev/null 2>&1; then
+      runuser -l "$TARGET_USER" -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user daemon-reload' || true
     fi
     ;;
 esac
 
-# On purge the dedicated user is intentionally left in place to avoid orphaning
-# files it may own. Remove manually if desired:
-#   deluser --system session-recorder-alsa-reader
+# Purge intentionally does not run `loginctl disable-linger`: linger is a
+# property of the login user's session, not of this package, and other
+# services (or the user's own login) may still depend on it.
 
 exit 0
