@@ -89,6 +89,3 @@ docker-compose.override.yml.local
 
 # Local data directories
 data/
-
-# Per-machine settings of rust/recorder/tools/deploy.sh
-rust/recorder/tools/deploy.env

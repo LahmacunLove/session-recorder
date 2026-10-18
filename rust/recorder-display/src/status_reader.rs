@@ -179,7 +179,6 @@ impl StatusReaderService {
                     signal_status: 0, // Unknown
                     peak_percent: 0.0,
                     clipping: false,
-                    chromaprint_fingerprint: String::new(),
                 };
 
                 statuses.insert(
@@ -262,7 +261,6 @@ mod tests {
             signal_status: SignalStatus::Signal.into(),
             peak_percent: 50.0,
             clipping: false,
-            chromaprint_fingerprint: String::new(),
         };
 
         let request = Request::new(status.clone());
