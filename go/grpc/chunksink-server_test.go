@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	cspb "github.com/pascalhuerst/session-recorder/protocols/go/chunksink"
@@ -62,8 +63,8 @@ func TestNewChunkSinkServer(t *testing.T) {
 		t.Error("NewChunkSinkServer() config not set correctly")
 	}
 
-	if server.sendCommandFunc == nil {
-		t.Error("NewChunkSinkServer() sendCommandFunc not initialized")
+	if server.commandStreams == nil {
+		t.Error("NewChunkSinkServer() commandStreams not initialized")
 	}
 }
 
@@ -302,5 +303,78 @@ func TestChunkSinkServer_serverOptions(t *testing.T) {
 	options := server.serverOptions()
 	if options == nil {
 		t.Error("serverOptions() returned nil")
+	}
+}
+
+// fakeCommandStream is a GetCommands server stream that ends when its
+// context is cancelled and records what is sent on it.
+type fakeCommandStream struct {
+	cspb.ChunkSink_GetCommandsServer
+	ctx  context.Context
+	sent []*cspb.Command
+}
+
+func (f *fakeCommandStream) Context() context.Context { return f.ctx }
+
+func (f *fakeCommandStream) Send(c *cspb.Command) error {
+	f.sent = append(f.sent, c)
+	return nil
+}
+
+// openStream runs GetCommands for recorderID until cancel is called; done
+// is closed once GetCommands has returned.
+func openStream(t *testing.T, s *ChunkSinkServer, recorderID uuid.UUID) (*fakeCommandStream, context.CancelFunc, chan struct{}) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &fakeCommandStream{ctx: ctx}
+	s.mu.Lock()
+	ownID := s.nextStreamID + 1
+	s.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		_ = s.GetCommands(&cspb.GetCommandRequest{RecorderID: recorderID.String()}, stream)
+		close(done)
+	}()
+	// Wait for this stream, not just any: with an older stream already
+	// registered, checking for an entry would return before this one is.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		s.mu.Lock()
+		registered := s.commandStreams[recorderID].id == ownID
+		s.mu.Unlock()
+		if registered {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("stream was not registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return stream, cancel, done
+}
+
+// A stale stream closing after the recorder opened a newer one must not
+// unregister the newer one (seen 2026-10-17/18: CutSession then failed with
+// "no connection to recorder" while the recorder was connected).
+func TestChunkSinkServer_StaleStreamCloseKeepsNewerStream(t *testing.T) {
+	s := NewChunkSinkServer(&ChunkSinkServerConfig{Name: "test"})
+	recorderID := uuid.New()
+
+	_, cancelOld, oldDone := openStream(t, s, recorderID)
+	newer, cancelNew, newDone := openStream(t, s, recorderID)
+
+	cancelOld()
+	<-oldDone
+	if err := s.CutSession(recorderID); err != nil {
+		t.Fatalf("CutSession after the stale stream closed: %v", err)
+	}
+	if len(newer.sent) != 1 {
+		t.Fatalf("the newer stream got %d commands, want 1", len(newer.sent))
+	}
+
+	cancelNew()
+	<-newDone
+	if err := s.CutSession(recorderID); err == nil {
+		t.Fatal("CutSession with no stream left should fail")
 	}
 }

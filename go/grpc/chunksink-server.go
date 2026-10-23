@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	cspb "github.com/pascalhuerst/session-recorder/protocols/go/chunksink"
 	cmpb "github.com/pascalhuerst/session-recorder/protocols/go/common"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 // Callbacks that can be provided by the caller to react to events.
@@ -34,15 +36,25 @@ type ChunkSinkServerConfig struct {
 type ChunkSinkServer struct {
 	config *ChunkSinkServerConfig
 
-	mu              sync.Mutex
-	sendCommandFunc map[uuid.UUID]func(*cspb.Command) error
+	mu sync.Mutex
+	// The command stream each recorder is reachable through: the newest one
+	// it opened. A recorder can briefly have several (a reconnect while the
+	// old stream has not noticed it is dead yet); only the stream registered
+	// here may remove the entry again.
+	commandStreams map[uuid.UUID]commandStream
+	nextStreamID   uint64
+}
+
+type commandStream struct {
+	id   uint64
+	send func(*cspb.Command) error
 }
 
 // NewChunkSinkServer constructs a new server instance with the provided config.
 func NewChunkSinkServer(config *ChunkSinkServerConfig) *ChunkSinkServer {
 	return &ChunkSinkServer{
-		config:          config,
-		sendCommandFunc: make(map[uuid.UUID]func(*cspb.Command) error),
+		config:         config,
+		commandStreams: make(map[uuid.UUID]commandStream),
 	}
 }
 
@@ -51,9 +63,22 @@ func (s *ChunkSinkServer) registerGrpcServer(server *grpc.Server) {
 	cspb.RegisterChunkSinkServer(server, s)
 }
 
-// serverOptions allows future customization of server options.
+// serverOptions: keepalive, so a command stream that died silently (an
+// idle connection over Wi-Fi) is noticed in seconds rather than hours. The
+// enforcement policy lets recorders ping as often as every 10 s, also with
+// no call running - without it the server would answer their keepalive
+// pings with GOAWAY "too_many_pings".
 func (s *ChunkSinkServer) serverOptions() []grpc.ServerOption {
-	return []grpc.ServerOption{}
+	return []grpc.ServerOption{
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 10 * time.Second,
+		}),
+	}
 }
 
 // announcement data is published via mDNS to advertise the service.
@@ -96,8 +121,10 @@ func (s *ChunkSinkServer) GetCommands(request *cspb.GetCommandRequest, server cs
 	}
 
 	s.mu.Lock()
-	s.sendCommandFunc[recorderID] = server.Send
-	mapSize := len(s.sendCommandFunc)
+	s.nextStreamID++
+	streamID := s.nextStreamID
+	s.commandStreams[recorderID] = commandStream{id: streamID, send: server.Send}
+	mapSize := len(s.commandStreams)
 	if s.config.OnRecorderConnectedCB != nil {
 		go s.config.OnRecorderConnectedCB(recorderID)
 	}
@@ -112,17 +139,24 @@ func (s *ChunkSinkServer) GetCommands(request *cspb.GetCommandRequest, server cs
 	ctxErr := server.Context().Err()
 
 	s.mu.Lock()
-	delete(s.sendCommandFunc, recorderID)
-	mapSize = len(s.sendCommandFunc)
-	if s.config.OnRecorderDisconnectedCB != nil {
-		go s.config.OnRecorderDisconnectedCB(recorderID)
+	// Only if it is still this stream: a stale stream closing after the
+	// recorder has opened a newer one must not take the newer one with it.
+	current, registered := s.commandStreams[recorderID]
+	stillOurs := registered && current.id == streamID
+	if stillOurs {
+		delete(s.commandStreams, recorderID)
+		if s.config.OnRecorderDisconnectedCB != nil {
+			go s.config.OnRecorderDisconnectedCB(recorderID)
+		}
 	}
+	mapSize = len(s.commandStreams)
 	s.mu.Unlock()
 
 	log.Info().
 		Stringer("recorder-id", recorderID).
 		Int("connected-recorders", mapSize).
 		AnErr("ctx-err", ctxErr).
+		Bool("superseded", !stillOurs).
 		Msg("GetCommands: stream closed")
 
 	return ctxErr
@@ -133,8 +167,8 @@ func (s *ChunkSinkServer) CutSession(recorderID uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if send := s.sendCommandFunc[recorderID]; send != nil {
-		return send(&cspb.Command{
+	if stream, ok := s.commandStreams[recorderID]; ok {
+		return stream.send(&cspb.Command{
 			Command: &cspb.Command_CmdCutSession{
 				CmdCutSession: &cspb.CmdCutSession{},
 			},
