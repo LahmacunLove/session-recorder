@@ -345,6 +345,19 @@ struct SessionRecorder {
 struct ClientInfo {
     client: ChunkSinkClientService,
     last_successful_send: Option<SystemTime>,
+    /// The command listener for this server. It lives exactly as long as
+    /// this entry: dropping the entry (a failed send, the service gone)
+    /// stops it, so a re-attach never leaves an old listener running next
+    /// to the new one.
+    command_listener: Option<tokio::task::AbortHandle>,
+}
+
+impl Drop for ClientInfo {
+    fn drop(&mut self) {
+        if let Some(listener) = &self.command_listener {
+            listener.abort();
+        }
+    }
 }
 
 impl ClientInfo {
@@ -352,6 +365,7 @@ impl ClientInfo {
         Self {
             client,
             last_successful_send: None,
+            command_listener: None,
         }
     }
 
@@ -1114,11 +1128,7 @@ impl SessionRecorder {
                     service_info.instance_name, recorder_id
                 );
 
-                clients
-                    .lock()
-                    .await
-                    .insert(service_info.instance_name.clone(), ClientInfo::new(client));
-
+                let mut client_info = ClientInfo::new(client);
                 if let Some(cut_tx) = cut_tx {
                     let listener_url = url.clone();
                     let listener_recorder = recorder_id.to_string();
@@ -1129,7 +1139,7 @@ impl SessionRecorder {
                         "Spawning command listener for {} → {}",
                         listener_name, listener_url
                     );
-                    tokio::spawn(async move {
+                    let listener = tokio::spawn(async move {
                         command_listener_task(
                             listener_name,
                             listener_url,
@@ -1139,12 +1149,17 @@ impl SessionRecorder {
                         )
                         .await;
                     });
+                    client_info.command_listener = Some(listener.abort_handle());
                 } else {
                     warn!(
                         "No cut channel available — command listener for {} not spawned",
                         service_info.instance_name
                     );
                 }
+                clients
+                    .lock()
+                    .await
+                    .insert(service_info.instance_name.clone(), client_info);
             }
             Err(e) => {
                 error!("Failed to connect to {}: {}", service_info.instance_name, e);
@@ -1516,8 +1531,19 @@ async fn flush_pending(
     enqueue_audio_chunk(outbox, session, chunk_count, data).await;
 }
 
+/// Shortest and longest pause before the command stream is opened again.
+const COMMAND_RETRY_MIN: Duration = Duration::from_secs(1);
+const COMMAND_RETRY_MAX: Duration = Duration::from_secs(30);
+/// A stream that held this long earns a quick retry again.
+const COMMAND_STREAM_STABLE: Duration = Duration::from_secs(60);
+
 /// Subscribe to the ChunkSink server's command stream and forward `CmdCutSession`
-/// to the cut channel. Exits when the stream ends or shutdown is signalled.
+/// to the cut channel - and keep it subscribed: whenever the stream cannot be
+/// opened, errors or is closed by the server, open it again after a pause
+/// (1 s doubling to 30 s). Ends on shutdown, or when aborted because the
+/// server's `ClientInfo` was dropped. Before, a stream that died while the
+/// chunk connection stayed healthy was never reopened, and the backend's
+/// CutSession failed with "no connection to recorder" until a restart.
 async fn command_listener_task(
     service_name: String,
     url: String,
@@ -1525,12 +1551,42 @@ async fn command_listener_task(
     cut_tx: tokio::sync::mpsc::Sender<CutTrigger>,
     shutdown: Arc<AtomicBool>,
 ) {
+    let mut pause = COMMAND_RETRY_MIN;
+    while !shutdown.load(Ordering::Relaxed) {
+        let started = std::time::Instant::now();
+        run_command_stream(&service_name, &url, &recorder_id, &cut_tx, &shutdown).await;
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+        if started.elapsed() >= COMMAND_STREAM_STABLE {
+            pause = COMMAND_RETRY_MIN;
+        }
+        info!(
+            "Command listener for {}: opening the stream again in {:?}",
+            service_name, pause
+        );
+        tokio::time::sleep(pause).await;
+        pause = (pause * 2).min(COMMAND_RETRY_MAX);
+    }
+    info!("Command listener for {} stopped", service_name);
+}
+
+/// One command stream, from connecting until it ends.
+async fn run_command_stream(
+    service_name: &str,
+    url: &str,
+    recorder_id: &str,
+    cut_tx: &tokio::sync::mpsc::Sender<CutTrigger>,
+    shutdown: &Arc<AtomicBool>,
+) {
     info!(
         "Command listener: connecting to {} at {}",
         service_name, url
     );
-    let endpoint = match Channel::from_shared(url.clone()) {
-        Ok(b) => b.connect_timeout(Duration::from_secs(5)),
+    let endpoint = match Channel::from_shared(url.to_string()) {
+        Ok(b) => recorder::grpc::chunk_sink_client::with_keepalive(
+            b.connect_timeout(Duration::from_secs(5)),
+        ),
         Err(e) => {
             warn!("Command listener: invalid URL {}: {}", url, e);
             return;
@@ -1550,7 +1606,7 @@ async fn command_listener_task(
         recorder_id
     );
     let request = Request::new(GetCommandRequest {
-        recorder_id: recorder_id.clone(),
+        recorder_id: recorder_id.to_string(),
     });
     let mut stream = match client.get_commands(request).await {
         Ok(r) => r.into_inner(),
@@ -1595,8 +1651,6 @@ async fn command_listener_task(
             }
         }
     }
-
-    info!("Command listener for {} stopped", service_name);
 }
 
 #[tokio::main]

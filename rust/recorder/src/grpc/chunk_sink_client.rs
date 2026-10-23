@@ -22,6 +22,18 @@ use chunksink::Chunks;
 use chunksink::chunk_sink_client::ChunkSinkClient;
 use common::{RecorderStatus, SignalStatus};
 
+/// HTTP/2 and TCP keepalive for a connection to a ChunkSink server, so a
+/// connection that died silently - an idle command stream over Wi-Fi with
+/// power saving - is noticed within seconds instead of hours. The backend
+/// accepts pings every 10 s and more seldom, also without a call running.
+pub fn with_keepalive(endpoint: tonic::transport::Endpoint) -> tonic::transport::Endpoint {
+    endpoint
+        .http2_keep_alive_interval(Duration::from_secs(20))
+        .keep_alive_timeout(Duration::from_secs(10))
+        .keep_alive_while_idle(true)
+        .tcp_keepalive(Some(Duration::from_secs(30)))
+}
+
 /// Error types for ChunkSink client operations
 #[derive(Debug)]
 pub enum ChunkSinkError {
@@ -126,11 +138,13 @@ impl ChunkSinkClientService {
             self.config.server_address
         );
 
-        let channel = Channel::from_shared(self.config.server_address.clone())?
-            .connect_timeout(self.config.connect_timeout)
-            .timeout(self.config.request_timeout)
-            .connect()
-            .await?;
+        let channel = with_keepalive(
+            Channel::from_shared(self.config.server_address.clone())?
+                .connect_timeout(self.config.connect_timeout)
+                .timeout(self.config.request_timeout),
+        )
+        .connect()
+        .await?;
 
         self.client = Some(ChunkSinkClient::new(channel));
         info!("Successfully connected to ChunkSink server");
