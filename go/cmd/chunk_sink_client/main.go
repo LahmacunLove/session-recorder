@@ -61,7 +61,7 @@ func main() {
 		RecorderID:   recorderID,
 		RecorderName: "Test Recorder 1",
 		SignalStatus: cmpb.SignalStatus_SIGNAL,
-		PeakPercent:  0.5,
+		RmsPercent:   0.5,
 		Clipping:     false,
 	}
 

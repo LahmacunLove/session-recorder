@@ -113,8 +113,8 @@ impl StatusReaderService {
                 .map(|(_, _, session, rms)| (session.clone(), rms.clone()))
                 .unwrap_or((None, RmsLevel::new()));
 
-            // Update peak level with new data
-            existing_rms.update(status.peak_percent as f32, status.clipping);
+            // Update RMS level with new data
+            existing_rms.update(status.rms_percent as f32, status.clipping);
 
             statuses.insert(
                 status.recorder_id.clone(),
@@ -135,7 +135,7 @@ impl StatusReaderService {
         //    "Signal Status: {}",
         //    self.signal_status_to_string(status.signal_status)
         //);
-        //println!("Peak Percent: {:.2}%", status.peak_percent);
+        //println!("RMS Percent: {:.2}%", status.rms_percent);
         //println!("Clipping: {}", if status.clipping { "Yes" } else { "No" });
         //println!("==============================");
     }
@@ -177,7 +177,7 @@ impl StatusReaderService {
                     recorder_id: chunks.recorder_id.clone(),
                     recorder_name: format!("Recorder {}", chunks.recorder_id),
                     signal_status: 0, // Unknown
-                    peak_percent: 0.0,
+                    rms_percent: 0.0,
                     clipping: false,
                 };
 
@@ -259,7 +259,7 @@ mod tests {
             recorder_id: "test-recorder".to_string(),
             recorder_name: "Test Recorder".to_string(),
             signal_status: SignalStatus::Signal.into(),
-            peak_percent: 50.0,
+            rms_percent: 50.0,
             clipping: false,
         };
 
